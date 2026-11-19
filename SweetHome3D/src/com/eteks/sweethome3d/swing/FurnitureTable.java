@@ -125,6 +125,7 @@ import com.eteks.sweethome3d.viewcontroller.View;
 public class FurnitureTable extends JTable implements View, Printable {
   private static final String EXPANDED_ROWS_VISUAL_PROPERTY = "com.eteks.sweethome3d.SweetHome3D.ExpandedGroups";
 
+  private Home                   home;
   private UserPreferences        preferences;
   private ListSelectionListener  tableSelectionListener;
   private boolean                selectionByUser;
@@ -147,6 +148,7 @@ public class FurnitureTable extends JTable implements View, Printable {
    */
   public FurnitureTable(Home home, UserPreferences preferences, 
                        FurnitureController controller) {
+    this.home = home;
     this.preferences = preferences;
     float resolutionScale = SwingTools.getResolutionScale();
     if (resolutionScale != 1) {
@@ -750,8 +752,18 @@ public class FurnitureTable extends JTable implements View, Printable {
           return headerRendererLabel;
         }
       };
+    List<TableColumn> printedColumns = new ArrayList<TableColumn>();
     for (int columnIndex = 0, n = columnModel.getColumnCount(); columnIndex < n; columnIndex++) {
-      final TableColumn tableColumn = columnModel.getColumn(columnIndex);
+      printedColumns.add(columnModel.getColumn(columnIndex));
+    }
+    // Print the level column even if it isn't displayed, to distinguish furniture of different levels
+    if (!this.home.getLevels().isEmpty()
+        && !this.home.getFurnitureVisibleProperties().contains(HomePieceOfFurniture.SortableProperty.LEVEL)
+        && columnModel instanceof FurnitureTableColumnModel) {
+      printedColumns.add(((FurnitureTableColumnModel)columnModel).getAvailableColumn(
+          HomePieceOfFurniture.SortableProperty.LEVEL));
+    }
+    for (final TableColumn tableColumn : printedColumns) {
       // Create a printable column from existing table column
       TableColumn printableColumn = new TableColumn();
       printableColumn.setIdentifier(tableColumn.getIdentifier());
@@ -801,12 +813,14 @@ public class FurnitureTable extends JTable implements View, Printable {
         updateTableColumnsWidth(0);
       }
       setGridColor(gridColor);
-      Printable printable = getPrintable(PrintMode.FIT_WIDTH, null, null);
-      int pageExists = printable.print(g, pageFormat, pageIndex);
-      // Restore column model and grid color to their previous values
-      setColumnModel(oldColumnModel);
-      setGridColor(oldGridColor);
-      return pageExists;
+      try {
+        Printable printable = getPrintable(PrintMode.FIT_WIDTH, null, null);
+        return printable.print(g, pageFormat, pageIndex);
+      } finally {
+        // Restore column model and grid color to their previous values, even if printing failed
+        setColumnModel(oldColumnModel);
+        setGridColor(oldGridColor);
+      }
     } else {
       // Print synchronously table in Event Dispatch Thread
       // The best solution should be to be able to print out of Event Dispatch Thread
@@ -1036,8 +1050,15 @@ public class FurnitureTable extends JTable implements View, Printable {
     }
 
     /**
-     * Adds a property change listener to home to update displayed columns list 
-     * from furniture visible properties. 
+     * Returns the column matching the given <code>property</code>, displayed or not.
+     */
+    public TableColumn getAvailableColumn(HomePieceOfFurniture.SortableProperty property) {
+      return this.availableColumns.get(property);
+    }
+
+    /**
+     * Adds a property change listener to home to update displayed columns list
+     * from furniture visible properties.
      */
     private void addHomeListener(final Home home) {
       home.addPropertyChangeListener(Home.Property.FURNITURE_VISIBLE_PROPERTIES, 
